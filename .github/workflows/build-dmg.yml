@@ -1,14 +1,18 @@
 name: Verify and package macOS app
 on:
   push:
-    branches: [main, codex/editor-polish]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build-dmg:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Test editor and export regressions
@@ -16,8 +20,10 @@ jobs:
         env:
           SCREENSHOTI_TEST_ARTIFACTS: ${{ runner.temp }}/screenshoti-tests
       - name: Build application and installer
-        run: bash build_dmg.sh
+        if: matrix.os == 'macos-26'
+        run: bash build_dmg.sh --arch arm64 --arch x86_64
       - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-26'
         with:
           name: Screenshoti-macOS-installer
           path: Screenshoti-*-Installer.dmg
@@ -25,6 +31,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: export-diagnostics
+          name: export-diagnostics-${{ matrix.os }}
           path: ${{ runner.temp }}/screenshoti-tests
           if-no-files-found: ignore

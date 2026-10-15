@@ -102,16 +102,35 @@ struct EditorRegressionTests {
         let cg = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
         #expect(cg.width == 100 * scale && cg.height == 80 * scale)
     }
-    @Test func redactedPixelsAreFullyOpaqueAndContainNoSourceColor() throws {
-        let model = try plainEditor(); model.addAnnotation(item(.redactBlur))
+    @Test(arguments: [1, 2]) func redactedPixelsAreFullyOpaqueAndContainNoSourceColor(scale: Int) throws {
+        let model = try plainEditor(scale: scale)
+        model.outerPadding = 12; model.innerInset = 3; model.showMacOSHeader = true
+        model.addAnnotation(AnnotationItem(tool: .redactBlur, startPoint: CGPoint(x: 10, y: 12), endPoint: CGPoint(x: 38, y: 34)))
         let image = try #require(model.renderFinalImage())
         let cg = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
         let bitmap = NSBitmapImageRep(cgImage: cg)
-        try saveDiagnostic(bitmap, name: "redaction.png")
-        let masked = try #require(bitmap.colorAt(x: 40, y: 40)?.usingColorSpace(.deviceRGB))
-        let clear = try #require(bitmap.colorAt(x: 5, y: 5)?.usingColorSpace(.deviceRGB))
+        try saveDiagnostic(bitmap, name: "redaction-\(scale)x.png")
+        // Source image starts at (15, 47): outer padding + inner inset + 32pt header.
+        let masked = try #require(bitmap.colorAt(x: 39 * scale, y: 70 * scale)?.usingColorSpace(.deviceRGB))
+        let clear = try #require(bitmap.colorAt(x: 20 * scale, y: 52 * scale)?.usingColorSpace(.deviceRGB))
         #expect(masked.redComponent < 0.01 && masked.greenComponent < 0.01 && masked.blueComponent < 0.01)
         #expect(masked.alphaComponent > 0.99 && clear.redComponent > 0.99)
+    }
+    @Test(arguments: [AnnotationTool.arrow, .rectangle, .text, .stepCounter])
+    func exportIncludesVisibleAnnotation(tool: AnnotationTool) throws {
+        let model = try plainEditor()
+        var annotation = item(tool); annotation.text = "Test"; annotation.color = .red
+        model.addAnnotation(annotation)
+        let image = try #require(model.renderFinalImage())
+        let bitmap = NSBitmapImageRep(cgImage: try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil)))
+        var coloredPixels = 0
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                   color.redComponent > 0.7, color.greenComponent < 0.5, color.blueComponent < 0.5 { coloredPixels += 1 }
+            }
+        }
+        #expect(coloredPixels > 5)
     }
     @Test func standaloneAnnotationLayerExports() throws {
         let renderer = ImageRenderer(content: AnnotationVectorLayerView(annotations: [item(.redactBlur)]).frame(width: 100, height: 80).background(.white))
