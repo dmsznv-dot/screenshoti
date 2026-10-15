@@ -14,6 +14,8 @@ final class EditorViewModel: ObservableObject {
     @Published var activeTool: AnnotationTool = .select
     @Published var activeColor: Color = Color(red: 1, green: 0.23, blue: 0.19)
     @Published var activeStrokeWidth: CGFloat = 3.5
+    @Published var activeFontName = "__system__"
+    @Published var activeFontSize: CGFloat = 15
     @Published var annotations: [AnnotationItem] = []
     @Published var undoStack: [[AnnotationItem]] = []
     @Published var redoStack: [[AnnotationItem]] = []
@@ -27,6 +29,7 @@ final class EditorViewModel: ObservableObject {
     @Published var isProcessingAI = false
     @Published var isCapturing = false
     @Published var isEditingText = false
+    var openStudio: (() -> Void)?
     private var documentID = UUID()
     private var bannerTask: Task<Void, Never>?
     private let maximumUndoSteps = 100
@@ -50,9 +53,8 @@ final class EditorViewModel: ObservableObject {
     private func capture(_ mode: ScreenCaptureService.Mode) {
         guard !isCapturing else { return }
         isCapturing = true
-        let targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        NSApp.hide(nil)
         FloatingWindowsManager.shared.hideForCapture()
+        NSApp.hide(nil)
         Task {
             defer {
                 isCapturing = false
@@ -61,7 +63,7 @@ final class EditorViewModel: ObservableObject {
             }
             do {
                 try await Task.sleep(nanoseconds: 180_000_000)
-                if let image = try await ScreenCaptureService.shared.capture(mode, targetPID: targetPID) {
+                if let image = try await ScreenCaptureService.shared.capture(mode) {
                     applyCapturedImage(image)
                 }
             } catch is CancellationError {
@@ -79,7 +81,12 @@ final class EditorViewModel: ObservableObject {
         if AppPreferences.shared.autoCopyToClipboard { copyRenderedCanvasToClipboard() }
         if AppPreferences.shared.showQuickOverlay {
             FloatingWindowsManager.shared.showQuickCornerOverlay(image: image,
-                onEdit: { NSApp.activate(ignoringOtherApps: true) },
+                onEdit: { [weak self] in
+                    self?.restoreCapture(item)
+                    self?.openStudio?()
+                    NSApp.unhide(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                },
                 onPin: { FloatingWindowsManager.shared.pinImageToScreen(image) })
         }
     }

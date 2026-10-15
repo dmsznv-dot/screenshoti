@@ -5,6 +5,7 @@ struct MainStudioWindow: View {
     @ObservedObject var viewModel: EditorViewModel
     @ObservedObject var prefs = AppPreferences.shared
     @State private var showSettings = false
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationSplitView {
@@ -38,6 +39,15 @@ struct MainStudioWindow: View {
                     .keyboardShortcut("s", modifiers: .command).buttonStyle(.borderedProminent)
             }
         }
+        .onAppear { viewModel.openStudio = { openWindow(id: "studio") } }
+        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidBeginEditingNotification)) { _ in
+            viewModel.isEditingText = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)) { _ in
+            DispatchQueue.main.async {
+                viewModel.isEditingText = NSApp.keyWindow?.firstResponder is NSTextView
+            }
+        }
         .sheet(isPresented: $showSettings) { settings }
         .sheet(isPresented: Binding(get: { viewModel.ocrModalText != nil }, set: { if !$0 { viewModel.ocrModalText = nil } })) {
             OCRResultModalView(text: viewModel.ocrModalText ?? "") { viewModel.ocrModalText = nil }
@@ -46,6 +56,7 @@ struct MainStudioWindow: View {
         .alert(prefs.tr(.errorTitle), isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })) {
             Button("OK") { viewModel.errorMessage = nil }
         } message: { Text(viewModel.errorMessage ?? "") }
+        .onChange(of: prefs.previewCorner) { _, _ in FloatingWindowsManager.shared.relayoutPreviews() }
         .preferredColorScheme(prefs.theme.colorScheme).tint(StudioPalette.accent)
     }
 
@@ -57,9 +68,9 @@ struct MainStudioWindow: View {
             }.padding(.top, 12)
             VStack(spacing: 8) {
                 captureButton(prefs.tr(viewModel.isCapturing ? .captureBusy : .captureArea), icon: "viewfinder", action: viewModel.triggerAreaCapture)
-                    .buttonStyle(.borderedProminent).keyboardShortcut("2", modifiers: [.command, .shift])
+                    .buttonStyle(.borderedProminent)
                 captureButton(prefs.tr(.captureWindow), icon: "macwindow", action: viewModel.triggerWindowCapture)
-                    .buttonStyle(.bordered).keyboardShortcut("3", modifiers: [.command, .shift])
+                    .buttonStyle(.bordered)
                 captureButton(prefs.tr(.captureFullscreen), icon: "rectangle.dashed", action: viewModel.triggerFullscreenCapture).buttonStyle(.bordered)
             }.disabled(viewModel.isCapturing)
             Divider()
@@ -133,7 +144,7 @@ struct MainStudioWindow: View {
                 }.buttonStyle(.plain).help(tool.title(prefs)).accessibilityLabel(tool.title(prefs))
             }
             Divider().frame(height: 22).padding(.horizontal, 5)
-            ColorPicker("", selection: $viewModel.activeColor).labelsHidden().frame(width: 30)
+            CompactColorPalette(color: $viewModel.activeColor, title: prefs.tr(.colorLabel))
             Divider().frame(height: 22).padding(.horizontal, 5)
             Button(action: viewModel.undoLastAnnotation) { Image(systemName: "arrow.uturn.backward").frame(width: 30, height: 34) }
                 .buttonStyle(.plain).help(prefs.tr(.undo)).disabled(viewModel.undoStack.isEmpty)
@@ -156,8 +167,13 @@ struct MainStudioWindow: View {
             }.pickerStyle(.segmented)
             Toggle(prefs.tr(.autoCopyLabel), isOn: $prefs.autoCopyToClipboard)
             Toggle(prefs.tr(.quickOverlayLabel), isOn: $prefs.showQuickOverlay)
+            Picker(prefs.language == .ru ? "Расположение снимков" : "Screenshot position", selection: $prefs.previewCorner) {
+                ForEach(PreviewCorner.allCases) { corner in Text(corner.title(for: prefs.language)).tag(corner) }
+            }
+            Divider()
+            CaptureShortcutSettings()
             HStack { Spacer(); Button(prefs.tr(.done)) { showSettings = false }.buttonStyle(.borderedProminent) }
-        }.padding(24).frame(width: 390)
+        }.padding(24).frame(width: 510)
     }
 }
 
@@ -187,7 +203,6 @@ struct InspectorSidebarView: View {
                 section(prefs.tr(.geometrySection)) {
                     LabeledSlider(title: prefs.tr(.outerPadding), value: $viewModel.outerPadding, range: 0...140)
                     LabeledSlider(title: prefs.tr(.innerInset), value: $viewModel.innerInset, range: 0...48)
-                    LabeledSlider(title: prefs.tr(.cornerRadius), value: $viewModel.cornerRadius, range: 0...36)
                     LabeledSlider(title: prefs.tr(.shadowRadius), value: $viewModel.shadowRadius, range: 0...60)
                     Toggle(prefs.tr(.windowHeaderToggle), isOn: $viewModel.showMacOSHeader).toggleStyle(.switch).font(.caption)
                 }
@@ -195,6 +210,11 @@ struct InspectorSidebarView: View {
                     Picker("", selection: $viewModel.aspectRatio) { ForEach(AspectRatioPreset.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented).labelsHidden()
                 }
                 Divider()
+                if viewModel.activeTool == .text {
+                    section(prefs.language == .ru ? "Новый текст" : "New text") {
+                        FontControls(fontName: $viewModel.activeFontName, fontSize: $viewModel.activeFontSize)
+                    }
+                }
                 section(prefs.tr(.annotationsSection)) {
                     if viewModel.annotations.isEmpty {
                         Text(prefs.tr(.layersHint)).font(.caption).foregroundStyle(.secondary)
@@ -219,11 +239,20 @@ struct InspectorSidebarView: View {
                             TextField(prefs.tr(.textContent), text: Binding(get: { viewModel.selectedAnnotation?.text ?? "" }, set: { value in
                                 guard var selected = viewModel.selectedAnnotation else { return }; selected.text = value; viewModel.updateAnnotation(selected)
                             })).textFieldStyle(.roundedBorder).focused($textFocused)
+                            FontControls(fontName: Binding(get: { viewModel.selectedAnnotation?.fontName ?? AnnotationItem.systemFontName }, set: { value in
+                                guard var selected = viewModel.selectedAnnotation else { return }; selected.fontName = value; viewModel.updateAnnotation(selected)
+                            }), fontSize: Binding(get: { viewModel.selectedAnnotation?.fontSize ?? AnnotationItem.defaultFontSize }, set: { value in
+                                guard var selected = viewModel.selectedAnnotation else { return }; selected.fontSize = value; viewModel.updateAnnotation(selected)
+                            }))
                         }
                         if item.tool != .redactBlur {
-                            ColorPicker(prefs.tr(.colorLabel), selection: Binding(get: { viewModel.selectedAnnotation?.color ?? .red }, set: { value in
-                                guard var selected = viewModel.selectedAnnotation else { return }; selected.color = value; viewModel.updateAnnotation(selected)
-                            })).font(.caption)
+                            HStack {
+                                Text(prefs.tr(.colorLabel)).font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                CompactColorPalette(color: Binding(get: { viewModel.selectedAnnotation?.color ?? .red }, set: { value in
+                                    guard var selected = viewModel.selectedAnnotation else { return }; selected.color = value; viewModel.updateAnnotation(selected)
+                                }), title: prefs.tr(.colorLabel))
+                            }
                         }
                         if item.tool == .arrow || item.tool == .rectangle {
                             LabeledSlider(title: prefs.tr(.lineWidth), value: Binding(get: { viewModel.selectedAnnotation?.strokeWidth ?? 3.5 }, set: { value in
@@ -240,8 +269,7 @@ struct InspectorSidebarView: View {
             }.padding(18)
         }
         .onChange(of: viewModel.selectedAnnotationID) { _, _ in textFocused = viewModel.selectedAnnotation?.tool == .text }
-        .onChange(of: textFocused) { _, focused in viewModel.isEditingText = focused }
-        .onDisappear { viewModel.isEditingText = false }
+
     }
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 11) { Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary); content() }

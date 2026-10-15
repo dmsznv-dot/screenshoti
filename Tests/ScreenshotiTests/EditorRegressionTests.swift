@@ -133,10 +133,10 @@ struct EditorRegressionTests {
         #expect(coloredPixels > 5)
     }
     @Test func standaloneAnnotationLayerExports() throws {
-        let renderer = ImageRenderer(content: AnnotationVectorLayerView(annotations: [item(.redactBlur)]).frame(width: 100, height: 80).background(.white))
+        let renderer = ImageRenderer(content: AnnotationVectorLayerView(annotations: [AnnotationItem(tool: .redactBlur, startPoint: CGPoint(x: 10, y: 12), endPoint: CGPoint(x: 38, y: 34))]).frame(width: 100, height: 80).background(.white))
         let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
         try saveDiagnostic(bitmap, name: "layer.png")
-        let color = try #require(bitmap.colorAt(x: 40, y: 40)?.usingColorSpace(.deviceRGB))
+        let color = try #require(bitmap.colorAt(x: 24, y: 23)?.usingColorSpace(.deviceRGB))
         #expect(color.redComponent < 0.01)
     }
     @Test func editingTextKeepsLayerIdentityAndUndo() {

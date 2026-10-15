@@ -37,7 +37,8 @@ struct InteractiveBeautifiedCanvasView: View {
     private func newItem(start: CGPoint, end: CGPoint) -> AnnotationItem {
         AnnotationItem(tool: viewModel.activeTool, startPoint: start, endPoint: end,
                        color: viewModel.activeColor, strokeWidth: viewModel.activeStrokeWidth,
-                       text: AppPreferences.shared.tr(.newText), stepNumber: viewModel.stepCounterValue)
+                       text: AppPreferences.shared.tr(.newText), stepNumber: viewModel.stepCounterValue,
+                       fontName: viewModel.activeFontName, fontSize: viewModel.activeFontSize)
     }
     private func handleGesture(start: CGPoint, current: CGPoint, isEnded: Bool) {
         let end = CGPoint(x: min(max(current.x, 0), viewModel.sourceImage.size.width),
@@ -146,7 +147,9 @@ struct AnnotationVectorLayerView: View {
                 case .rectangle:
                     Path(roundedRect: item.boundingRect, cornerRadius: 6).stroke(item.color, lineWidth: item.strokeWidth)
                 case .redactBlur:
-                    Path(item.boundingRect.insetBy(dx: -2, dy: -2)).fill(Color.black)
+                    // A nonzero RGB black avoids ImageRenderer dropping pure-black fills on macOS 15.
+                    Path(item.boundingRect.insetBy(dx: -2, dy: -2))
+                        .fill(Color(.sRGB, red: 1.0 / 255, green: 1.0 / 255, blue: 1.0 / 255, opacity: 1))
                 case .arrow:
                     arrowPath(item).stroke(item.color, style: StrokeStyle(lineWidth: item.strokeWidth, lineCap: .round, lineJoin: .round))
                 case .stepCounter:
@@ -155,8 +158,8 @@ struct AnnotationVectorLayerView: View {
                         Text("\(item.stepNumber)").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                     }.frame(width: 28, height: 28).position(item.endPoint)
                 case .text:
-                    let size = (item.text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 15, weight: .bold)])
-                    Text(item.text).font(.system(size: 15, weight: .bold)).foregroundStyle(item.color).fixedSize()
+                    let size = item.textSize
+                    Text(item.text).font(Font(item.nsFont)).foregroundStyle(item.color).fixedSize()
                         .position(x: item.endPoint.x + size.width / 2, y: item.endPoint.y)
                 case .select:
                     EmptyView()

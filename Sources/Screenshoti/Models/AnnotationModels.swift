@@ -23,6 +23,10 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
 }
 
 struct AnnotationItem: Identifiable, Equatable {
+    static let systemFontName = "__system__"
+    static let defaultFontSize: CGFloat = 15
+    static let fontSizeRange: ClosedRange<CGFloat> = 8...144
+
     let id: UUID
     var tool: AnnotationTool
     var startPoint: CGPoint
@@ -31,6 +35,8 @@ struct AnnotationItem: Identifiable, Equatable {
     var strokeWidth: CGFloat
     var text: String
     var stepNumber: Int
+    var fontName: String
+    var fontSize: CGFloat
     
     init(
         id: UUID = UUID(),
@@ -40,7 +46,9 @@ struct AnnotationItem: Identifiable, Equatable {
         color: Color = .red,
         strokeWidth: CGFloat = 3.5,
         text: String = "Note",
-        stepNumber: Int = 1
+        stepNumber: Int = 1,
+        fontName: String = AnnotationItem.systemFontName,
+        fontSize: CGFloat = AnnotationItem.defaultFontSize
     ) {
         self.id = id
         self.tool = tool
@@ -50,6 +58,8 @@ struct AnnotationItem: Identifiable, Equatable {
         self.strokeWidth = strokeWidth
         self.text = text
         self.stepNumber = stepNumber
+        self.fontName = fontName
+        self.fontSize = fontSize
     }
     
     var boundingRect: CGRect {
@@ -122,10 +132,24 @@ struct CanvasGeometry {
 }
 
 extension AnnotationItem {
+    /// One resolved font drives both canvas rendering and selection geometry.
+    var nsFont: NSFont {
+        let size = fontSize.isFinite ? min(Self.fontSizeRange.upperBound, max(Self.fontSizeRange.lowerBound, fontSize)) : Self.defaultFontSize
+        if fontName != Self.systemFontName {
+            if let font = NSFont(name: fontName, size: size) { return font }
+            if let font = NSFontManager.shared.font(withFamily: fontName, traits: [], weight: 5, size: size) { return font }
+        }
+        return NSFont.systemFont(ofSize: size, weight: .bold)
+    }
+
+    var textSize: CGSize {
+        (text as NSString).size(withAttributes: [.font: nsFont])
+    }
+
     var selectionRect: CGRect {
         switch tool {
         case .text:
-            let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 15, weight: .bold)])
+            let size = textSize
             return CGRect(x: endPoint.x, y: endPoint.y - size.height / 2, width: max(size.width, 20), height: size.height).insetBy(dx: -5, dy: -5)
         case .stepCounter:
             return CGRect(x: endPoint.x - 17, y: endPoint.y - 17, width: 34, height: 34)

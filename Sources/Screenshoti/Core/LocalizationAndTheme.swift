@@ -39,6 +39,12 @@ final class AppPreferences: ObservableObject {
     @AppStorage("auto_copy_clipboard") var autoCopyToClipboard: Bool = true
     @AppStorage("show_quick_overlay") var showQuickOverlay: Bool = true
     
+    @AppStorage("preview_corner") var previewCorner: PreviewCorner = .bottomLeft {
+        didSet { objectWillChange.send() }
+    }
+    @Published var captureHotkeys = CaptureHotkeyConfiguration.load(from: .standard) {
+        didSet { captureHotkeys.save(to: .standard) }
+    }
     static let shared = AppPreferences()
     
     func tr(_ key: LKey) -> String {
