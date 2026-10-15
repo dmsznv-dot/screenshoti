@@ -28,7 +28,24 @@ final class EditorViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isProcessingAI = false
     @Published var isCapturing = false
-    @Published var isEditingText = false
+    @Published private var editingTextControls: Set<UUID> = []
+    var isEditingText: Bool { !editingTextControls.isEmpty || ocrModalText != nil }
+    func setTextEditing(_ id: UUID, _ isEditing: Bool) {
+        if isEditing { editingTextControls.insert(id) } else { editingTextControls.remove(id) }
+    }
+    private var routesCommandsToText: Bool { isEditingText || NSApp?.keyWindow?.firstResponder is NSTextView }
+    func copyCommand() {
+        if routesCommandsToText { NSApp?.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) }
+        else { copyRenderedCanvasToClipboard() }
+    }
+    func undoCommand() {
+        if routesCommandsToText { NSApp?.sendAction(Selector(("undo:")), to: nil, from: nil) }
+        else { undoLastAnnotation() }
+    }
+    func redoCommand() {
+        if routesCommandsToText { NSApp?.sendAction(Selector(("redo:")), to: nil, from: nil) }
+        else { redoLastAnnotation() }
+    }
     var openStudio: (() -> Void)?
     private var documentID = UUID()
     private var bannerTask: Task<Void, Never>?

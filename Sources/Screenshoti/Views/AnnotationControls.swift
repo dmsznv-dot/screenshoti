@@ -5,6 +5,8 @@ import SwiftUI
 struct CompactColorPalette: View {
     @Binding var color: Color
     let title: String
+    var onEditingChanged: (UUID, Bool) -> Void = { _, _ in }
+    @State private var inputID = UUID()
     @ObservedObject private var preferences = AppPreferences.shared
     @State private var isPresented = false
     @State private var hexValue = ""
@@ -77,7 +79,10 @@ struct CompactColorPalette: View {
             }
             .padding(16)
             .frame(width: 230)
+            .onDisappear { onEditingChanged(inputID, false) }
         }
+        .onChange(of: isPresented) { _, presented in onEditingChanged(inputID, presented) }
+        .onDisappear { onEditingChanged(inputID, false) }
         .onChange(of: color) { _, newColor in
             hexValue = Self.hex(for: newColor)
             invalidHex = false
@@ -116,6 +121,9 @@ private enum FontCatalog {
 struct FontControls: View {
     @Binding var fontName: String
     @Binding var fontSize: CGFloat
+    var onEditingChanged: (UUID, Bool) -> Void = { _, _ in }
+    @State private var inputID = UUID()
+    @FocusState private var sizeFocused: Bool
     @ObservedObject private var preferences = AppPreferences.shared
 
     private var boundedSize: Binding<Double> {
@@ -149,6 +157,7 @@ struct FontControls: View {
                 TextField(preferences.language == .ru ? "Размер шрифта" : "Font size", value: boundedSize,
                           format: .number.precision(.fractionLength(0)))
                     .textFieldStyle(.roundedBorder)
+                    .focused($sizeFocused)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 50)
                 Text("pt").font(.caption).foregroundStyle(.secondary)
@@ -157,5 +166,7 @@ struct FontControls: View {
             }
         }
         .font(.system(size: 12))
+        .onChange(of: sizeFocused) { _, focused in onEditingChanged(inputID, focused) }
+        .onDisappear { onEditingChanged(inputID, false) }
     }
 }

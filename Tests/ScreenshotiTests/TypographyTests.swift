@@ -10,6 +10,36 @@ struct TypographyTests {
                        color: .red, text: "Wide text", fontName: font, fontSize: size)
     }
 
+    @Test func editingFocusTracksIndependentFieldsAndOCR() {
+        let model = EditorViewModel()
+        let text = UUID(), color = UUID()
+        model.setTextEditing(text, true); model.setTextEditing(color, true)
+        model.setTextEditing(text, false)
+        #expect(model.isEditingText)
+        model.setTextEditing(color, false)
+        #expect(!model.isEditingText)
+        model.ocrModalText = "Recognized text"
+        #expect(model.isEditingText)
+        model.ocrModalText = nil
+        #expect(!model.isEditingText)
+    }
+
+    @Test func fieldCommandsCannotUndoTheDocument() {
+        let model = EditorViewModel()
+        let original = textItem()
+        model.addAnnotation(original)
+        let field = UUID()
+        model.setTextEditing(field, true)
+        model.copyCommand(); model.undoCommand(); model.redoCommand()
+        #expect(model.annotations == [original])
+        #expect(!model.showCopiedBanner)
+        model.setTextEditing(field, false)
+        model.undoCommand()
+        #expect(model.annotations.isEmpty)
+        model.redoCommand()
+        #expect(model.annotations == [original])
+    }
+
     @Test func largerFontExpandsSelectionAndHitBounds() {
         let small = textItem(size: 12)
         let large = textItem(size: 36)

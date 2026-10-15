@@ -33,25 +33,16 @@ struct MainStudioWindow: View {
                     Button(prefs.tr(.settings), systemImage: "gearshape") { showSettings = true }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .disabled(viewModel.isProcessingAI || viewModel.isCapturing)
-                Button(action: viewModel.copyRenderedCanvasToClipboard) { Label(prefs.tr(.copyImage), systemImage: "doc.on.doc") }
-                    .keyboardShortcut(viewModel.isEditingText ? nil : KeyboardShortcut("c", modifiers: .command))
+                Button(action: viewModel.copyCommand) { Label(prefs.tr(.copyImage), systemImage: "doc.on.doc") }
+                    .keyboardShortcut("c", modifiers: .command)
                 Button(action: viewModel.saveRenderedCanvasToDisk) { Label(prefs.tr(.saveImage), systemImage: "square.and.arrow.down") }
                     .keyboardShortcut("s", modifiers: .command).buttonStyle(.borderedProminent)
             }
         }
         .onAppear { viewModel.openStudio = { openWindow(id: "studio") } }
-        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidBeginEditingNotification)) { _ in
-            viewModel.isEditingText = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)) { _ in
-            DispatchQueue.main.async {
-                viewModel.isEditingText = NSApp.keyWindow?.firstResponder is NSTextView
-            }
-        }
         .sheet(isPresented: $showSettings) { settings }
         .sheet(isPresented: Binding(get: { viewModel.ocrModalText != nil }, set: { if !$0 { viewModel.ocrModalText = nil } })) {
             OCRResultModalView(text: viewModel.ocrModalText ?? "") { viewModel.ocrModalText = nil }
-                .onAppear { viewModel.isEditingText = true }.onDisappear { viewModel.isEditingText = false }
         }
         .alert(prefs.tr(.errorTitle), isPresented: Binding(get: { viewModel.errorMessage != nil }, set: { if !$0 { viewModel.errorMessage = nil } })) {
             Button("OK") { viewModel.errorMessage = nil }
@@ -144,14 +135,14 @@ struct MainStudioWindow: View {
                 }.buttonStyle(.plain).help(tool.title(prefs)).accessibilityLabel(tool.title(prefs))
             }
             Divider().frame(height: 22).padding(.horizontal, 5)
-            CompactColorPalette(color: $viewModel.activeColor, title: prefs.tr(.colorLabel))
+            CompactColorPalette(color: $viewModel.activeColor, title: prefs.tr(.colorLabel), onEditingChanged: viewModel.setTextEditing)
             Divider().frame(height: 22).padding(.horizontal, 5)
-            Button(action: viewModel.undoLastAnnotation) { Image(systemName: "arrow.uturn.backward").frame(width: 30, height: 34) }
+            Button(action: viewModel.undoCommand) { Image(systemName: "arrow.uturn.backward").frame(width: 30, height: 34) }
                 .buttonStyle(.plain).help(prefs.tr(.undo)).disabled(viewModel.undoStack.isEmpty)
-                .keyboardShortcut(viewModel.isEditingText ? nil : KeyboardShortcut("z", modifiers: .command))
-            Button(action: viewModel.redoLastAnnotation) { Image(systemName: "arrow.uturn.forward").frame(width: 30, height: 34) }
+                .keyboardShortcut("z", modifiers: .command)
+            Button(action: viewModel.redoCommand) { Image(systemName: "arrow.uturn.forward").frame(width: 30, height: 34) }
                 .buttonStyle(.plain).help(prefs.tr(.redo)).disabled(viewModel.redoStack.isEmpty)
-                .keyboardShortcut(viewModel.isEditingText ? nil : KeyboardShortcut("z", modifiers: [.command, .shift]))
+                .keyboardShortcut("z", modifiers: [.command, .shift])
         }.padding(7).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
             .overlay(RoundedRectangle(cornerRadius: 15).strokeBorder(Color.primary.opacity(0.08)))
             .shadow(color: .black.opacity(0.07), radius: 12, y: 3)
@@ -181,6 +172,7 @@ struct InspectorSidebarView: View {
     @ObservedObject var viewModel: EditorViewModel
     @ObservedObject var prefs = AppPreferences.shared
     @FocusState private var textFocused: Bool
+    @State private var textInputID = UUID()
     private let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
     var body: some View {
         ScrollView {
@@ -212,7 +204,7 @@ struct InspectorSidebarView: View {
                 Divider()
                 if viewModel.activeTool == .text {
                     section(prefs.language == .ru ? "Новый текст" : "New text") {
-                        FontControls(fontName: $viewModel.activeFontName, fontSize: $viewModel.activeFontSize)
+                        FontControls(fontName: $viewModel.activeFontName, fontSize: $viewModel.activeFontSize, onEditingChanged: viewModel.setTextEditing)
                     }
                 }
                 section(prefs.tr(.annotationsSection)) {
@@ -243,7 +235,7 @@ struct InspectorSidebarView: View {
                                 guard var selected = viewModel.selectedAnnotation else { return }; selected.fontName = value; viewModel.updateAnnotation(selected)
                             }), fontSize: Binding(get: { viewModel.selectedAnnotation?.fontSize ?? AnnotationItem.defaultFontSize }, set: { value in
                                 guard var selected = viewModel.selectedAnnotation else { return }; selected.fontSize = value; viewModel.updateAnnotation(selected)
-                            }))
+                            }), onEditingChanged: viewModel.setTextEditing)
                         }
                         if item.tool != .redactBlur {
                             HStack {
@@ -251,7 +243,7 @@ struct InspectorSidebarView: View {
                                 Spacer()
                                 CompactColorPalette(color: Binding(get: { viewModel.selectedAnnotation?.color ?? .red }, set: { value in
                                     guard var selected = viewModel.selectedAnnotation else { return }; selected.color = value; viewModel.updateAnnotation(selected)
-                                }), title: prefs.tr(.colorLabel))
+                                }), title: prefs.tr(.colorLabel), onEditingChanged: viewModel.setTextEditing)
                             }
                         }
                         if item.tool == .arrow || item.tool == .rectangle {
@@ -269,6 +261,8 @@ struct InspectorSidebarView: View {
             }.padding(18)
         }
         .onChange(of: viewModel.selectedAnnotationID) { _, _ in textFocused = viewModel.selectedAnnotation?.tool == .text }
+        .onChange(of: textFocused) { _, focused in viewModel.setTextEditing(textInputID, focused) }
+        .onDisappear { viewModel.setTextEditing(textInputID, false) }
 
     }
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
