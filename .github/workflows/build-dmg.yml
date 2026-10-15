@@ -1,24 +1,30 @@
-name: Build macOS DMG Installer
-
+name: Verify and package macOS app
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, codex/editor-polish]
+  pull_request:
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
   build-dmg:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build .app and .dmg Installer
-        run: |
-          chmod +x build_dmg.sh
-          ./build_dmg.sh
-
-      - name: Upload DMG Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/checkout@v4
+      - name: Test editor and export regressions
+        run: bash scripts/test.sh
+        env:
+          SCREENSHOTI_TEST_ARTIFACTS: ${{ runner.temp }}/screenshoti-tests
+      - name: Build application and installer
+        run: bash build_dmg.sh
+      - uses: actions/upload-artifact@v4
         with:
-          name: Screenshoti-macOS-DMG-Installer
-          path: Screenshoti-1.0.0-Installer.dmg
+          name: Screenshoti-macOS-installer
+          path: Screenshoti-*-Installer.dmg
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: export-diagnostics
+          path: ${{ runner.temp }}/screenshoti-tests
+          if-no-files-found: ignore

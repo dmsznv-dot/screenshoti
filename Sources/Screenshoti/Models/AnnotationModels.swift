@@ -105,3 +105,42 @@ struct CaptureHistoryItem: Identifiable {
     let image: NSImage
     let recognizedText: String
 }
+
+struct CanvasGeometry {
+    let canvasSize: CGSize
+    static let headerHeight: CGFloat = 32
+
+    init(imageSize: CGSize, padding: CGFloat, inset: CGFloat, showsHeader: Bool, ratio: CGFloat?) {
+        let width = imageSize.width + 2 * (padding + inset)
+        let height = imageSize.height + 2 * (padding + inset) + (showsHeader ? Self.headerHeight : 0)
+        if let ratio, ratio > 0 {
+            canvasSize = CGSize(width: max(width, height * ratio), height: max(height, width / ratio))
+        } else {
+            canvasSize = CGSize(width: width, height: height)
+        }
+    }
+}
+
+extension AnnotationItem {
+    var selectionRect: CGRect {
+        switch tool {
+        case .text:
+            let size = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 15, weight: .bold)])
+            return CGRect(x: endPoint.x, y: endPoint.y - size.height / 2, width: max(size.width, 20), height: size.height).insetBy(dx: -5, dy: -5)
+        case .stepCounter:
+            return CGRect(x: endPoint.x - 17, y: endPoint.y - 17, width: 34, height: 34)
+        default:
+            return boundingRect.insetBy(dx: -6, dy: -6)
+        }
+    }
+
+    func hitTest(_ point: CGPoint) -> Bool {
+        guard tool == .arrow else { return selectionRect.contains(point) }
+        let dx = endPoint.x - startPoint.x
+        let dy = endPoint.y - startPoint.y
+        let length = dx * dx + dy * dy
+        guard length > 0 else { return hypot(point.x - startPoint.x, point.y - startPoint.y) <= 10 }
+        let t = min(1, max(0, ((point.x - startPoint.x) * dx + (point.y - startPoint.y) * dy) / length))
+        return hypot(point.x - startPoint.x - t * dx, point.y - startPoint.y - t * dy) <= max(10, strokeWidth)
+    }
+}

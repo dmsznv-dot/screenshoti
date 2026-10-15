@@ -2,3 +2,7 @@
 # DMG Build Artifacts
 build_dmg_staging/
 *.dmg
+
+build_dmg_staging/
+*.dmg
+*.zip

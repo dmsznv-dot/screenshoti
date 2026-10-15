@@ -4,109 +4,84 @@ import CoreGraphics
 
 @MainActor
 final class ScreenCaptureService {
+    enum Mode { case area, window, fullscreen }
+    enum CaptureError: LocalizedError {
+        case permission, unavailable, noWindow
+        var errorDescription: String? {
+            switch self {
+            case .permission: return AppPreferences.shared.tr(.capturePermission)
+            case .unavailable: return AppPreferences.shared.tr(.captureUnavailable)
+            case .noWindow: return AppPreferences.shared.tr(.noWindow)
+            }
+        }
+    }
     static let shared = ScreenCaptureService()
-    private var overlayWindows: [NSWindow] = []
-    
-    /// Захват всего активного экрана через ScreenCaptureKit (с фолбэком на CGDisplayCreateImage)
-    func captureFullscreen() async -> NSImage? {
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first else {
-                return fallbackFullscreenCapture()
-            }
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-            let config = SCStreamConfiguration()
-            config.width = display.width * 2
-            config.height = display.height * 2
-            config.showsCursor = false
-            
-            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            return NSImage(cgImage: cgImage, size: NSSize(width: display.width, height: display.height))
-        } catch {
-            return fallbackFullscreenCapture()
+    private var overlayWindow: NSWindow?
+
+    func capture(_ mode: Mode, targetPID: pid_t? = nil) async throws -> NSImage? {
+        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { throw CaptureError.permission }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        switch mode {
+        case .window:
+            return try await captureWindow(content: content, targetPID: targetPID)
+        case .fullscreen, .area:
+            let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+            guard let screen, let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+                  let display = content.displays.first(where: { $0.displayID == number.uint32Value }) else { throw CaptureError.unavailable }
+            let ownWindows = content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier }
+            let filter = SCContentFilter(display: display, excludingWindows: ownWindows)
+            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration(for: filter))
+            let image = NSImage(cgImage: cgImage, size: screen.frame.size)
+            if mode == .fullscreen { return image }
+            return await selectArea(screen: screen, image: image, cgImage: cgImage)
         }
     }
-    
-    /// Захват верхнего активного окна приложения
-    func captureFrontWindow() async -> NSImage? {
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-            let ownBundleID = Bundle.main.bundleIdentifier
-            guard let targetWindow = content.windows.first(where: {
-                $0.isOnScreen && $0.frame.width > 120 && $0.frame.height > 120 &&
-                $0.owningApplication?.bundleIdentifier != ownBundleID
-            }) else {
-                return await captureFullscreen()
-            }
-            
-            let filter = SCContentFilter(desktopIndependentWindow: targetWindow)
-            let config = SCStreamConfiguration()
-            config.width = Int(targetWindow.frame.width * 2)
-            config.height = Int(targetWindow.frame.height * 2)
-            config.showsCursor = false
-            
-            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            return NSImage(cgImage: cgImage, size: targetWindow.frame.size)
-        } catch {
-            return await captureFullscreen()
-        }
+    private func configuration(for filter: SCContentFilter) -> SCStreamConfiguration {
+        let config = SCStreamConfiguration()
+        let scale = CGFloat(filter.pointPixelScale)
+        config.width = max(1, Int((filter.contentRect.width * scale).rounded()))
+        config.height = max(1, Int((filter.contentRect.height * scale).rounded()))
+        config.showsCursor = false
+        config.ignoreShadowsSingleWindow = true
+        return config
     }
-    
-    /// Интерактивный захват области с кастомным прицелом и координатами
-    func beginInteractiveAreaCapture(completion: @escaping (NSImage?) -> Void) {
-        guard let screen = NSScreen.main else {
-            completion(nil)
-            return
+    private func captureWindow(content: SCShareableContent, targetPID: pid_t?) async throws -> NSImage {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let desiredPID = targetPID == ownPID ? nil : targetPID
+        let infos = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        let windowIDs = infos.compactMap { info -> CGWindowID? in
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
+                  desiredPID == nil || pid == desiredPID,
+                  let number = info[kCGWindowNumber as String] as? NSNumber else { return nil }
+            return number.uint32Value
         }
-        
-        // Сначала делаем мгновенный снимок экрана для оверлея
-        guard let cgScreenImage = CGDisplayCreateImage(CGMainDisplayID()) else {
-            completion(nil)
-            return
-        }
-        let fullNSImage = NSImage(cgImage: cgScreenImage, size: screen.frame.size)
-        
-        let panel = AreaSelectionWindow(screen: screen, backgroundSnapshot: fullNSImage) { [weak self] selectedRect in
-            self?.closeOverlays()
-            guard let rect = selectedRect, rect.width > 8, rect.height > 8 else {
-                completion(nil)
-                return
-            }
-            
-            // Пересчет координат из системы AppKit (снизу-вверх) в CoreGraphics (сверху-вниз)
-            let scale = CGFloat(cgScreenImage.width) / screen.frame.width
-            let flippedY = screen.frame.height - rect.origin.y - rect.height
-            let cropRect = CGRect(
-                x: rect.origin.x * scale,
-                y: flippedY * scale,
-                width: rect.width * scale,
-                height: rect.height * scale
-            )
-            
-            if let croppedCG = cgScreenImage.cropping(to: cropRect) {
-                let result = NSImage(cgImage: croppedCG, size: rect.size)
-                completion(result)
-            } else {
-                completion(nil)
-            }
-        }
-        
-        overlayWindows = [panel]
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        let target = windowIDs.compactMap { id in content.windows.first { $0.windowID == id } }
+            .first { $0.isOnScreen && $0.frame.width > 60 && $0.frame.height > 60 }
+        guard let target else { throw CaptureError.noWindow }
+        let filter = SCContentFilter(desktopIndependentWindow: target)
+        let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration(for: filter))
+        return NSImage(cgImage: cgImage, size: filter.contentRect.size)
     }
-    
-    private func closeOverlays() {
-        for win in overlayWindows {
-            win.orderOut(nil)
+    private func selectArea(screen: NSScreen, image: NSImage, cgImage: CGImage) async -> NSImage? {
+        await withCheckedContinuation { continuation in
+            let panel = AreaSelectionWindow(screen: screen, backgroundSnapshot: image) { [weak self] rect in
+                self?.overlayWindow?.orderOut(nil)
+                self?.overlayWindow = nil
+                guard let rect, rect.width >= 2, rect.height >= 2 else { continuation.resume(returning: nil); return }
+                let scaleX = CGFloat(cgImage.width) / screen.frame.width
+                let scaleY = CGFloat(cgImage.height) / screen.frame.height
+                let crop = CGRect(x: rect.minX * scaleX, y: (screen.frame.height - rect.maxY) * scaleY,
+                                  width: rect.width * scaleX, height: rect.height * scaleY).integral
+                    .intersection(CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+                guard !crop.isEmpty, let cropped = cgImage.cropping(to: crop) else { continuation.resume(returning: nil); return }
+                continuation.resume(returning: NSImage(cgImage: cropped, size: NSSize(width: crop.width / scaleX, height: crop.height / scaleY)))
+            }
+            overlayWindow = panel
+            panel.makeKeyAndOrderFront(nil)
+            panel.makeFirstResponder(panel.contentView)
+            NSApp.activate(ignoringOtherApps: true)
         }
-        overlayWindows.removeAll()
-    }
-    
-    private func fallbackFullscreenCapture() -> NSImage? {
-        guard let screen = NSScreen.main,
-              let cgImg = CGDisplayCreateImage(CGMainDisplayID()) else { return nil }
-        return NSImage(cgImage: cgImg, size: screen.frame.size)
     }
 }
 
@@ -140,6 +115,7 @@ final class AreaSelectionWindow: NSPanel {
 final class AreaSelectionView: NSView {
     private let snapshot: NSImage
     private let onComplete: (CGRect?) -> Void
+    private var isFinished = false
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint = .zero
     
@@ -147,7 +123,7 @@ final class AreaSelectionView: NSView {
         self.snapshot = snapshot
         self.onComplete = onComplete
         super.init(frame: frame)
-        NSCursor.crosshair.push()
+
     }
     
     required init?(coder: NSCoder) { fatalError() }
@@ -156,11 +132,16 @@ final class AreaSelectionView: NSView {
     
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // ESC
-            NSCursor.pop()
-            onComplete(nil)
+            finish(nil)
         }
     }
     
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
+    private func finish(_ rect: CGRect?) {
+        guard !isFinished else { return }
+        isFinished = true
+        onComplete(rect)
+    }
     override func mouseMoved(with event: NSEvent) {
         currentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
@@ -179,19 +160,19 @@ final class AreaSelectionView: NSView {
     }
     
     override func mouseUp(with event: NSEvent) {
-        NSCursor.pop()
         guard let start = startPoint else {
-            onComplete(nil)
+            finish(nil)
             return
         }
-        let end = convert(event.locationInWindow, from: nil)
+        let raw = convert(event.locationInWindow, from: nil)
+        let end = CGPoint(x: min(max(0, raw.x), bounds.width), y: min(max(0, raw.y), bounds.height))
         let rect = CGRect(
             x: min(start.x, end.x),
             y: min(start.y, end.y),
             width: abs(end.x - start.x),
             height: abs(end.y - start.y)
         )
-        onComplete(rect)
+        finish(rect)
     }
     
     override func draw(_ dirtyRect: NSRect) {
@@ -211,7 +192,10 @@ final class AreaSelectionView: NSView {
             )
             
             // Отрисовка светлого участка внутри выделения
-            snapshot.draw(in: selection, from: selection, operation: .sourceOver, fraction: 1.0)
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: selection).addClip()
+            snapshot.draw(in: bounds)
+            NSGraphicsContext.restoreGraphicsState()
             
             // Белая + синяя рамка выделения
             let path = NSBezierPath(rect: selection)
@@ -220,7 +204,8 @@ final class AreaSelectionView: NSView {
             path.stroke()
             
             // Плашка с размерами в пикселях
-            let dimensionText = "\(Int(selection.width)) × \(Int(selection.height)) px"
+            let scale = window?.backingScaleFactor ?? 1
+            let dimensionText = "\(Int(selection.width * scale)) × \(Int(selection.height * scale)) px"
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
                 .foregroundColor: NSColor.white

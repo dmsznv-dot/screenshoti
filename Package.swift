@@ -14,9 +14,8 @@ let package = Package(
         .executableTarget(
             name: "Screenshoti",
             path: "Sources/Screenshoti",
-            resources: [
-                .process("Resources")
-            ]
-        )
+            exclude: ["Resources"]
+        ),
+        .testTarget(name: "ScreenshotiTests", dependencies: ["Screenshoti"])
     ]
 )
