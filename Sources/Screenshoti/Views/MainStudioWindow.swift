@@ -33,7 +33,9 @@ struct MainStudioWindow: View {
                     Button(prefs.tr(.settings), systemImage: "gearshape") { showSettings = true }
                 } label: { Image(systemName: "ellipsis.circle") }
                 .disabled(viewModel.isProcessingAI || viewModel.isCapturing)
-                Button(action: viewModel.copyCommand) { Label(prefs.tr(.copyImage), systemImage: "doc.on.doc") }
+                Button { viewModel.copyCommand(fromKeyboard: isKeyboardActivation) } label: {
+                    Label(prefs.tr(.copyImage), systemImage: "doc.on.doc")
+                }
                     .keyboardShortcut("c", modifiers: .command)
                 Button(action: viewModel.saveRenderedCanvasToDisk) { Label(prefs.tr(.saveImage), systemImage: "square.and.arrow.down") }
                     .keyboardShortcut("s", modifiers: .command).buttonStyle(.borderedProminent)
@@ -49,6 +51,13 @@ struct MainStudioWindow: View {
         } message: { Text(viewModel.errorMessage ?? "") }
         .onChange(of: prefs.previewCorner) { _, _ in FloatingWindowsManager.shared.relayoutPreviews() }
         .preferredColorScheme(prefs.theme.colorScheme).tint(StudioPalette.accent)
+    }
+
+    private var isKeyboardActivation: Bool {
+        // Mouse clicks explicitly act on the document; keyboard equivalents
+        // retain native text-field copy and undo behavior.
+        guard let type = NSApp.currentEvent?.type else { return true }
+        return type != .leftMouseDown && type != .leftMouseUp
     }
 
     private var sidebar: some View {
@@ -137,10 +146,14 @@ struct MainStudioWindow: View {
             Divider().frame(height: 22).padding(.horizontal, 5)
             CompactColorPalette(color: $viewModel.activeColor, title: prefs.tr(.colorLabel), onEditingChanged: viewModel.setTextEditing)
             Divider().frame(height: 22).padding(.horizontal, 5)
-            Button(action: viewModel.undoCommand) { Image(systemName: "arrow.uturn.backward").frame(width: 30, height: 34) }
+            Button { viewModel.undoCommand(fromKeyboard: isKeyboardActivation) } label: {
+                Image(systemName: "arrow.uturn.backward").frame(width: 30, height: 34)
+            }
                 .buttonStyle(.plain).help(prefs.tr(.undo)).disabled(viewModel.undoStack.isEmpty)
                 .keyboardShortcut("z", modifiers: .command)
-            Button(action: viewModel.redoCommand) { Image(systemName: "arrow.uturn.forward").frame(width: 30, height: 34) }
+            Button { viewModel.redoCommand(fromKeyboard: isKeyboardActivation) } label: {
+                Image(systemName: "arrow.uturn.forward").frame(width: 30, height: 34)
+            }
                 .buttonStyle(.plain).help(prefs.tr(.redo)).disabled(viewModel.redoStack.isEmpty)
                 .keyboardShortcut("z", modifiers: [.command, .shift])
         }.padding(7).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15))
