@@ -45,6 +45,10 @@ final class GlobalHotkeyManager: ObservableObject {
         onCapture?(action)
     }
     func setRecording(_ recording: Bool) { self.recording = recording; install() }
+    func retryFailedRegistrations() {
+        guard !errors.isEmpty, !recording else { return }
+        install()
+    }
     private func install() {
         registered.values.forEach { UnregisterEventHotKey($0) }
         registered.removeAll()

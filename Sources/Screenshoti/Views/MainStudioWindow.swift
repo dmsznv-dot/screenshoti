@@ -161,6 +161,7 @@ struct MainStudioWindow: View {
             .shadow(color: .black.opacity(0.07), radius: 12, y: 3)
     }
     private var settings: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 20) {
             Text(prefs.tr(.settings)).font(.title2.weight(.semibold))
             Picker(prefs.tr(.languageLabel), selection: $prefs.language) { ForEach(AppLanguage.allCases) { Text($0.displayName).tag($0) } }.pickerStyle(.segmented)
@@ -175,9 +176,12 @@ struct MainStudioWindow: View {
                 ForEach(PreviewCorner.allCases) { corner in Text(corner.title(for: prefs.language)).tag(corner) }
             }
             Divider()
+            CaptureAccessSettings()
+            Divider()
             CaptureShortcutSettings()
             HStack { Spacer(); Button(prefs.tr(.done)) { showSettings = false }.buttonStyle(.borderedProminent) }
-        }.padding(24).frame(width: 510)
+        }.padding(24)
+        }.frame(width: 560, height: 720)
     }
 }
 

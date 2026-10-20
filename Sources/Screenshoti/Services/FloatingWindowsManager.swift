@@ -77,7 +77,7 @@ final class FloatingWindowsManager: NSObject {
         panel.title = AppPreferences.shared.language == .ru ? "Закреплённый снимок" : "Pinned Screenshot"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: PinnedScreenshotView(image: image) { [weak panel] in
             panel?.close()
@@ -197,7 +197,7 @@ struct PinnedScreenshotView: View {
                 .aspectRatio(contentMode: .fit)
                 .opacity(opacity)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .onDrag { NSItemProvider(object: image) }
+                .onDrag { ScreenshotDragExport.itemProvider(for: image) }
             HStack(spacing: 6) {
                 Slider(value: $opacity, in: 0.25...1.0)
                     .frame(width: 70)
@@ -231,7 +231,7 @@ struct QuickOverlayCardView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .onDrag { NSItemProvider(object: image) }
+                .onDrag { ScreenshotDragExport.itemProvider(for: image) }
                 .accessibilityLabel(prefs.language == .ru ? "Снимок экрана — перетащите для экспорта" : "Screenshot — drag to export")
             HStack(spacing: 8) {
                 Button(action: onEdit) {

@@ -16,6 +16,16 @@ chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 cp Sources/Screenshoti/Resources/Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set CFBundleExecutable ${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
 plutil -lint "${APP_BUNDLE}/Contents/Info.plist"
+ICONSET=$(mktemp -d)/AppIcon.iconset
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" Sources/Screenshoti/Resources/AppIcon.png --out "${ICONSET}/icon_${size}x${size}.png" >/dev/null
+    pixels=$((size * 2))
+    sips -z "$pixels" "$pixels" Sources/Screenshoti/Resources/AppIcon.png --out "${ICONSET}/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+test -s "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 codesign --force --sign - --entitlements Sources/Screenshoti/Resources/Screenshoti.entitlements "${APP_BUNDLE}"
 codesign --verify --strict "${APP_BUNDLE}"
 if [[ "$APP_ONLY" == true ]]; then echo "App ready: ${APP_BUNDLE}"; exit 0; fi

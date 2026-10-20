@@ -3,22 +3,14 @@ import SwiftUI
 @main
 struct ScreenshotiApp: App {
     @NSApplicationDelegateAdaptor(ScreenshotiAppDelegate.self) private var appDelegate
-    @StateObject private var editorViewModel = EditorViewModel()
+    @StateObject private var editorViewModel = ApplicationRuntime.shared.editor
     @ObservedObject private var prefs = AppPreferences.shared
     
     var body: some Scene {
         Window("Screenshoti", id: "studio") {
             MainStudioWindow(viewModel: editorViewModel)
                 .frame(minWidth: 1020, minHeight: 680)
-                .onAppear {
-                    GlobalHotkeyManager.shared.start { [weak model = editorViewModel] action in
-                        switch action {
-                        case .area: model?.triggerAreaCapture()
-                        case .window: model?.triggerWindowCapture()
-                        case .fullscreen: model?.triggerFullscreenCapture()
-                        }
-                    }
-                }
+
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -54,6 +46,10 @@ struct ScreenshotiApp: App {
             
             Divider()
             
+            Button(prefs.language == .ru ? "Доступ к захвату экрана…" : "Screen Capture Access…") {
+                CapturePermissionController.shared.showSetup()
+            }
+            Divider()
             Button(prefs.tr(.quitApp)) {
                 NSApplication.shared.terminate(nil)
             }
@@ -62,6 +58,14 @@ struct ScreenshotiApp: App {
     }
 }
 
+@MainActor
 final class ScreenshotiAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.async { ApplicationRuntime.shared.start() }
+    }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        CapturePermissionController.shared.refresh()
+        GlobalHotkeyManager.shared.retryFailedRegistrations()
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

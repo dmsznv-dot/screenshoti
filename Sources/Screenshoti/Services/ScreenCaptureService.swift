@@ -20,7 +20,7 @@ final class ScreenCaptureService {
     private var activeProcess: Process?
 
     func capture(_ mode: Mode) async throws -> NSImage? {
-        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { throw CaptureError.permission }
+        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permission }
         switch mode {
         case .area, .window:
             return try await interactiveCapture(startsWithWindow: mode == .window)

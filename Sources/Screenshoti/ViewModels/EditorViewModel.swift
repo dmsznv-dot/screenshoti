@@ -51,7 +51,11 @@ final class EditorViewModel: ObservableObject {
     private var bannerTask: Task<Void, Never>?
     private let maximumUndoSteps = 100
 
-    init() { sourceImage = Self.generateDemoScreenshot() }
+    private let permissionController: CapturePermissionController
+    init(permissionController: CapturePermissionController = .shared) {
+        self.permissionController = permissionController
+        sourceImage = Self.generateDemoScreenshot()
+    }
 
     var canvasSize: CGSize {
         CanvasGeometry(imageSize: sourceImage.size, padding: outerPadding, inset: innerInset,
@@ -68,21 +72,25 @@ final class EditorViewModel: ObservableObject {
     func triggerWindowCapture() { capture(.window) }
     func triggerFullscreenCapture() { capture(.fullscreen) }
     private func capture(_ mode: ScreenCaptureService.Mode) {
-        guard !isCapturing else { return }
+        guard !isCapturing, permissionController.ensureAccess() else { return }
         isCapturing = true
         FloatingWindowsManager.shared.hideForCapture()
         NSApp.hide(nil)
         Task {
+            var needsAccessSetup = false
             defer {
                 isCapturing = false
                 NSApp.unhide(nil)
                 FloatingWindowsManager.shared.restoreAfterCapture()
+                if needsAccessSetup { permissionController.showSetup() }
             }
             do {
                 try await Task.sleep(nanoseconds: 180_000_000)
                 if let image = try await ScreenCaptureService.shared.capture(mode) {
                     applyCapturedImage(image)
                 }
+            } catch ScreenCaptureService.CaptureError.permission {
+                needsAccessSetup = true
             } catch is CancellationError {
                 // A cancelled selection leaves the document intact.
             } catch { errorMessage = error.localizedDescription }
