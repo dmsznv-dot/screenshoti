@@ -16,7 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare icon reference
-        if: matrix.os == 'macos-15'
         run: |
           sips -z 512 512 Sources/Screenshoti/Resources/AppIcon.png --out "$RUNNER_TEMP/screenshoti-icon-reference.png" >/dev/null
           echo 'SCREENSHOTI_ICON_REFERENCE_BEGIN'

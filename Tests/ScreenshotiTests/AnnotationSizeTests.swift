@@ -57,6 +57,29 @@ struct AnnotationSizeTests {
         #expect(large.height > small.height * 2)
     }
 
+
+    @Test func redactionCompletionDuringResizeKeepsSeparateUndoSteps() {
+        let model = EditorViewModel()
+        let original = marker(diameter: 28)
+        model.addAnnotation(original)
+        model.beginAnnotationStyleEdit()
+        var resized = original
+        resized.stepDiameter = 60
+        model.updateAnnotation(resized)
+        let redaction = AnnotationItem(tool: .redactBlur, startPoint: .zero,
+                                       endPoint: CGPoint(x: 20, y: 20))
+        model.appendRedactions([redaction])
+        model.endAnnotationStyleEdit()
+        model.undoLastAnnotation()
+        #expect(model.annotations == [resized])
+        model.undoLastAnnotation()
+        #expect(model.annotations == [original])
+        model.redoLastAnnotation()
+        #expect(model.annotations == [resized])
+        model.redoLastAnnotation()
+        #expect(model.annotations == [resized, redaction])
+    }
+
     private func exportedMarkerBounds(diameter: CGFloat) throws -> CGRect {
         let renderer = ImageRenderer(content: AnnotationVectorLayerView(annotations: [marker(diameter: diameter)])
             .frame(width: 180, height: 180).background(.white))
