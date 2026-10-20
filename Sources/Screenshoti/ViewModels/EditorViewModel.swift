@@ -52,8 +52,8 @@ final class EditorViewModel: ObservableObject {
     private let maximumUndoSteps = 100
 
     private let permissionController: CapturePermissionController
-    init(permissionController: CapturePermissionController = .shared) {
-        self.permissionController = permissionController
+    init(permissionController: CapturePermissionController? = nil) {
+        self.permissionController = permissionController ?? .shared
         sourceImage = Self.generateDemoScreenshot()
     }
 
