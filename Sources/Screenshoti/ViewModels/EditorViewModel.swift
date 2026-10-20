@@ -134,6 +134,7 @@ final class EditorViewModel: ObservableObject {
         ocrModalText = nil
     }
     private func rememberChange() {
+        endAnnotationStyleEdit()
         undoStack.append(annotations)
         if undoStack.count > maximumUndoSteps { undoStack.removeFirst() }
         redoStack.removeAll()

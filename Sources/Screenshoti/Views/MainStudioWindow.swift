@@ -310,7 +310,7 @@ struct InspectorSidebarView: View {
         }
     }
     private func styleEditingChanged(_ editing: Bool) {
-        if editing { viewModel.beginAnnotationStyleEdit() }
+        if editing { textFocused = false; viewModel.beginAnnotationStyleEdit() }
         else { viewModel.endAnnotationStyleEdit() }
     }
 

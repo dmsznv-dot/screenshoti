@@ -15,12 +15,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare icon reference
-        run: |
-          sips -z 512 512 Sources/Screenshoti/Resources/AppIcon.png --out "$RUNNER_TEMP/screenshoti-icon-reference.png" >/dev/null
-          echo 'SCREENSHOTI_ICON_REFERENCE_BEGIN'
-          base64 -i "$RUNNER_TEMP/screenshoti-icon-reference.png"
-          echo 'SCREENSHOTI_ICON_REFERENCE_END'
       - name: Test editor and export regressions
         run: bash scripts/test.sh
         env:

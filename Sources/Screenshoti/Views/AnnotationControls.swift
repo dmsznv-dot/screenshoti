@@ -165,7 +165,10 @@ struct FontControls: View {
                 Stepper(preferences.language == .ru ? "Размер шрифта" : "Font size", value: boundedSize, in: 8...144, step: 1)
                     .labelsHidden().fixedSize()
             }
-            Slider(value: boundedSize, in: 8...144, step: 1, onEditingChanged: onSizeEditingChanged)
+            Slider(value: boundedSize, in: 8...144, step: 1) { editing in
+                if editing { sizeFocused = false }
+                onSizeEditingChanged(editing)
+            }
                 .accessibilityLabel(preferences.language == .ru ? "Размер шрифта" : "Font size")
         }
         .font(.system(size: 12))
