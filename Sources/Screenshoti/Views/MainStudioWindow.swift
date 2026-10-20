@@ -137,7 +137,7 @@ struct MainStudioWindow: View {
     private var toolDock: some View {
         HStack(spacing: 3) {
             ForEach(AnnotationTool.allCases) { tool in
-                Button { viewModel.activeTool = tool } label: {
+                Button { viewModel.activeTool = tool; if tool != .select { viewModel.selectedAnnotationID = nil } } label: {
                     Image(systemName: tool.iconName).font(.system(size: 15, weight: .medium)).frame(width: 34, height: 34)
                         .foregroundStyle(viewModel.activeTool == tool ? Color.white : Color.primary.opacity(0.7))
                         .background(viewModel.activeTool == tool ? StudioPalette.accent : .clear, in: RoundedRectangle(cornerRadius: 8))
@@ -194,6 +194,7 @@ struct InspectorSidebarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                annotationSizing
                 Text(prefs.tr(.appearance)).font(.title3.weight(.semibold))
                 section(prefs.tr(.backgroundSection)) {
                     LazyVGrid(columns: columns, spacing: 8) {
@@ -219,11 +220,6 @@ struct InspectorSidebarView: View {
                     Picker("", selection: $viewModel.aspectRatio) { ForEach(AspectRatioPreset.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented).labelsHidden()
                 }
                 Divider()
-                if viewModel.activeTool == .text {
-                    section(prefs.language == .ru ? "Новый текст" : "New text") {
-                        FontControls(fontName: $viewModel.activeFontName, fontSize: $viewModel.activeFontSize, onEditingChanged: viewModel.setTextEditing)
-                    }
-                }
                 section(prefs.tr(.annotationsSection)) {
                     if viewModel.annotations.isEmpty {
                         Text(prefs.tr(.layersHint)).font(.caption).foregroundStyle(.secondary)
@@ -244,16 +240,6 @@ struct InspectorSidebarView: View {
                     if let item = viewModel.selectedAnnotation {
                         Divider().padding(.vertical, 4)
                         Text(prefs.tr(.selectedLayer)).font(.caption.weight(.semibold))
-                        if item.tool == .text {
-                            TextField(prefs.tr(.textContent), text: Binding(get: { viewModel.selectedAnnotation?.text ?? "" }, set: { value in
-                                guard var selected = viewModel.selectedAnnotation else { return }; selected.text = value; viewModel.updateAnnotation(selected)
-                            })).textFieldStyle(.roundedBorder).focused($textFocused)
-                            FontControls(fontName: Binding(get: { viewModel.selectedAnnotation?.fontName ?? AnnotationItem.systemFontName }, set: { value in
-                                guard var selected = viewModel.selectedAnnotation else { return }; selected.fontName = value; viewModel.updateAnnotation(selected)
-                            }), fontSize: Binding(get: { viewModel.selectedAnnotation?.fontSize ?? AnnotationItem.defaultFontSize }, set: { value in
-                                guard var selected = viewModel.selectedAnnotation else { return }; selected.fontSize = value; viewModel.updateAnnotation(selected)
-                            }), onEditingChanged: viewModel.setTextEditing)
-                        }
                         if item.tool != .redactBlur {
                             HStack {
                                 Text(prefs.tr(.colorLabel)).font(.caption).foregroundStyle(.secondary)
@@ -282,6 +268,52 @@ struct InspectorSidebarView: View {
         .onDisappear { viewModel.setTextEditing(textInputID, false) }
 
     }
+    @ViewBuilder
+    private var annotationSizing: some View {
+        if let item = viewModel.selectedAnnotation, item.tool == .text {
+            section(prefs.language == .ru ? "Выбранный текст" : "Selected text") {
+                TextField(prefs.tr(.textContent), text: Binding(get: { viewModel.selectedAnnotation?.text ?? "" }, set: { value in
+                    guard var selected = viewModel.selectedAnnotation else { return }
+                    selected.text = value; viewModel.updateAnnotation(selected)
+                })).textFieldStyle(.roundedBorder).focused($textFocused)
+                FontControls(onSizeEditingChanged: styleEditingChanged,
+                    fontName: Binding(get: { viewModel.selectedAnnotation?.fontName ?? AnnotationItem.systemFontName }, set: { value in
+                        guard var selected = viewModel.selectedAnnotation else { return }
+                        selected.fontName = value; viewModel.updateAnnotation(selected)
+                    }), fontSize: Binding(get: { viewModel.selectedAnnotation?.fontSize ?? AnnotationItem.defaultFontSize }, set: { value in
+                        guard var selected = viewModel.selectedAnnotation else { return }
+                        selected.fontSize = value; viewModel.activeFontSize = value; viewModel.updateAnnotation(selected)
+                    }), onEditingChanged: viewModel.setTextEditing)
+            }
+            Divider()
+        } else if let item = viewModel.selectedAnnotation, item.tool == .stepCounter {
+            section(prefs.language == .ru ? "Номерная метка \(item.stepNumber)" : "Numbered marker \(item.stepNumber)") {
+                LabeledSlider(title: prefs.language == .ru ? "Размер метки" : "Marker size",
+                    value: Binding(get: { viewModel.selectedAnnotation?.resolvedStepDiameter ?? AnnotationItem.defaultStepDiameter }, set: { value in
+                        guard var selected = viewModel.selectedAnnotation else { return }
+                        selected.stepDiameter = value; viewModel.activeStepDiameter = value; viewModel.updateAnnotation(selected)
+                    }), range: AnnotationItem.stepDiameterRange, unit: "pt", onEditingChanged: styleEditingChanged)
+            }
+            Divider()
+        } else if viewModel.activeTool == .text {
+            section(prefs.language == .ru ? "Новый текст" : "New text") {
+                FontControls(fontName: $viewModel.activeFontName, fontSize: $viewModel.activeFontSize,
+                             onEditingChanged: viewModel.setTextEditing)
+            }
+            Divider()
+        } else if viewModel.activeTool == .stepCounter {
+            section(prefs.language == .ru ? "Новые номерные метки" : "New numbered markers") {
+                LabeledSlider(title: prefs.language == .ru ? "Размер метки" : "Marker size",
+                    value: $viewModel.activeStepDiameter, range: AnnotationItem.stepDiameterRange, unit: "pt")
+            }
+            Divider()
+        }
+    }
+    private func styleEditingChanged(_ editing: Bool) {
+        if editing { viewModel.beginAnnotationStyleEdit() }
+        else { viewModel.endAnnotationStyleEdit() }
+    }
+
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 11) { Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary); content() }
     }
@@ -290,11 +322,14 @@ struct LabeledSlider: View {
     let title: String
     @Binding var value: CGFloat
     let range: ClosedRange<CGFloat>
+    var unit = "px"
+    var onEditingChanged: (Bool) -> Void = { _ in }
     var body: some View {
         VStack(spacing: 3) {
-            HStack { Text(title); Spacer(); Text("\(Int(value)) px").monospacedDigit() }.font(.caption).foregroundStyle(.secondary)
-            Slider(value: $value, in: range, step: 1).controlSize(.small)
-        }
+            HStack { Text(title); Spacer(); Text("\(Int(value)) \(unit)").monospacedDigit() }.font(.caption).foregroundStyle(.secondary)
+            Slider(value: $value, in: range, step: 1, onEditingChanged: onEditingChanged).controlSize(.small)
+                .accessibilityLabel(title)
+        }.onDisappear { onEditingChanged(false) }
     }
 }
 struct OCRResultModalView: View {

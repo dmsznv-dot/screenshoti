@@ -38,7 +38,8 @@ struct InteractiveBeautifiedCanvasView: View {
         AnnotationItem(tool: viewModel.activeTool, startPoint: start, endPoint: end,
                        color: viewModel.activeColor, strokeWidth: viewModel.activeStrokeWidth,
                        text: AppPreferences.shared.tr(.newText), stepNumber: viewModel.stepCounterValue,
-                       fontName: viewModel.activeFontName, fontSize: viewModel.activeFontSize)
+                       fontName: viewModel.activeFontName, fontSize: viewModel.activeFontSize,
+                       stepDiameter: viewModel.activeStepDiameter)
     }
     private func handleGesture(start: CGPoint, current: CGPoint, isEnded: Bool) {
         let end = CGPoint(x: min(max(current.x, 0), viewModel.sourceImage.size.width),
@@ -155,8 +156,11 @@ struct AnnotationVectorLayerView: View {
                 case .stepCounter:
                     ZStack {
                         Circle().fill(item.color)
-                        Text("\(item.stepNumber)").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                    }.frame(width: 28, height: 28).position(item.endPoint)
+                        Text("\(item.stepNumber)")
+                            .font(.system(size: item.resolvedStepDiameter * 13 / 28, weight: .bold))
+                            .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.35)
+                            .padding(.horizontal, item.resolvedStepDiameter * 0.1)
+                    }.frame(width: item.resolvedStepDiameter, height: item.resolvedStepDiameter).position(item.endPoint)
                 case .text:
                     let size = item.textSize
                     Text(item.text).font(Font(item.nsFont)).foregroundStyle(item.color).fixedSize()

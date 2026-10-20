@@ -119,6 +119,7 @@ private enum FontCatalog {
 
 /// Bind to defaults while creating text, or to an annotation while editing it.
 struct FontControls: View {
+    var onSizeEditingChanged: (Bool) -> Void = { _ in }
     @Binding var fontName: String
     @Binding var fontSize: CGFloat
     var onEditingChanged: (UUID, Bool) -> Void = { _, _ in }
@@ -164,9 +165,11 @@ struct FontControls: View {
                 Stepper(preferences.language == .ru ? "Размер шрифта" : "Font size", value: boundedSize, in: 8...144, step: 1)
                     .labelsHidden().fixedSize()
             }
+            Slider(value: boundedSize, in: 8...144, step: 1, onEditingChanged: onSizeEditingChanged)
+                .accessibilityLabel(preferences.language == .ru ? "Размер шрифта" : "Font size")
         }
         .font(.system(size: 12))
         .onChange(of: sizeFocused) { _, focused in onEditingChanged(inputID, focused) }
-        .onDisappear { onEditingChanged(inputID, false) }
+        .onDisappear { onEditingChanged(inputID, false); onSizeEditingChanged(false) }
     }
 }

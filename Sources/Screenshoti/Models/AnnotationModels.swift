@@ -26,6 +26,8 @@ struct AnnotationItem: Identifiable, Equatable {
     static let systemFontName = "__system__"
     static let defaultFontSize: CGFloat = 15
     static let fontSizeRange: ClosedRange<CGFloat> = 8...144
+    static let defaultStepDiameter: CGFloat = 28
+    static let stepDiameterRange: ClosedRange<CGFloat> = 16...128
 
     let id: UUID
     var tool: AnnotationTool
@@ -37,6 +39,7 @@ struct AnnotationItem: Identifiable, Equatable {
     var stepNumber: Int
     var fontName: String
     var fontSize: CGFloat
+    var stepDiameter: CGFloat
     
     init(
         id: UUID = UUID(),
@@ -48,7 +51,8 @@ struct AnnotationItem: Identifiable, Equatable {
         text: String = "Note",
         stepNumber: Int = 1,
         fontName: String = AnnotationItem.systemFontName,
-        fontSize: CGFloat = AnnotationItem.defaultFontSize
+        fontSize: CGFloat = AnnotationItem.defaultFontSize,
+        stepDiameter: CGFloat = AnnotationItem.defaultStepDiameter
     ) {
         self.id = id
         self.tool = tool
@@ -60,6 +64,7 @@ struct AnnotationItem: Identifiable, Equatable {
         self.stepNumber = stepNumber
         self.fontName = fontName
         self.fontSize = fontSize
+        self.stepDiameter = stepDiameter
     }
     
     var boundingRect: CGRect {
@@ -142,6 +147,10 @@ extension AnnotationItem {
         return NSFont.systemFont(ofSize: size, weight: .bold)
     }
 
+    var resolvedStepDiameter: CGFloat {
+        stepDiameter.isFinite ? min(Self.stepDiameterRange.upperBound, max(Self.stepDiameterRange.lowerBound, stepDiameter)) : Self.defaultStepDiameter
+    }
+
     var textSize: CGSize {
         (text as NSString).size(withAttributes: [.font: nsFont])
     }
@@ -152,7 +161,8 @@ extension AnnotationItem {
             let size = textSize
             return CGRect(x: endPoint.x, y: endPoint.y - size.height / 2, width: max(size.width, 20), height: size.height).insetBy(dx: -5, dy: -5)
         case .stepCounter:
-            return CGRect(x: endPoint.x - 17, y: endPoint.y - 17, width: 34, height: 34)
+            let extent = resolvedStepDiameter + 6
+            return CGRect(x: endPoint.x - extent / 2, y: endPoint.y - extent / 2, width: extent, height: extent)
         default:
             return boundingRect.insetBy(dx: -6, dy: -6)
         }

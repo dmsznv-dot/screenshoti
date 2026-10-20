@@ -16,6 +16,7 @@ final class EditorViewModel: ObservableObject {
     @Published var activeStrokeWidth: CGFloat = 3.5
     @Published var activeFontName = "__system__"
     @Published var activeFontSize: CGFloat = 15
+    @Published var activeStepDiameter: CGFloat = AnnotationItem.defaultStepDiameter
     @Published var annotations: [AnnotationItem] = []
     @Published var undoStack: [[AnnotationItem]] = []
     @Published var redoStack: [[AnnotationItem]] = []
@@ -50,6 +51,7 @@ final class EditorViewModel: ObservableObject {
     private var documentID = UUID()
     private var bannerTask: Task<Void, Never>?
     private let maximumUndoSteps = 100
+    private var annotationStyleBaseline: [AnnotationItem]?
 
     private let permissionController: CapturePermissionController
     init(permissionController: CapturePermissionController? = nil) {
@@ -121,6 +123,7 @@ final class EditorViewModel: ObservableObject {
         selectedHistoryID = item.id
     }
     private func loadImage(_ image: NSImage) {
+        annotationStyleBaseline = nil
         documentID = UUID()
         sourceImage = image
         annotations = []
@@ -135,11 +138,24 @@ final class EditorViewModel: ObservableObject {
         if undoStack.count > maximumUndoSteps { undoStack.removeFirst() }
         redoStack.removeAll()
     }
+    func beginAnnotationStyleEdit() {
+        guard annotationStyleBaseline == nil, selectedAnnotation != nil else { return }
+        annotationStyleBaseline = annotations
+    }
+    func endAnnotationStyleEdit() {
+        guard let baseline = annotationStyleBaseline else { return }
+        annotationStyleBaseline = nil
+        guard baseline != annotations else { return }
+        undoStack.append(baseline)
+        if undoStack.count > maximumUndoSteps { undoStack.removeFirst() }
+        redoStack.removeAll()
+    }
     private func reconcileSelectionAndSteps() {
         stepCounterValue = (annotations.filter { $0.tool == .stepCounter }.map(\.stepNumber).max() ?? 0) + 1
         if !annotations.contains(where: { $0.id == selectedAnnotationID }) { selectedAnnotationID = nil }
     }
     func addAnnotation(_ item: AnnotationItem) {
+        endAnnotationStyleEdit()
         rememberChange()
         annotations.append(item)
         selectedAnnotationID = item.id
@@ -147,7 +163,7 @@ final class EditorViewModel: ObservableObject {
     }
     func updateAnnotation(_ item: AnnotationItem) {
         guard let index = annotations.firstIndex(where: { $0.id == item.id }), annotations[index] != item else { return }
-        rememberChange()
+        if annotationStyleBaseline == nil { rememberChange() }
         annotations[index] = item
         reconcileSelectionAndSteps()
     }
@@ -163,24 +179,28 @@ final class EditorViewModel: ObservableObject {
         updateAnnotation(item)
     }
     func deleteSelectedAnnotation() {
+        endAnnotationStyleEdit()
         guard let id = selectedAnnotationID, annotations.contains(where: { $0.id == id }) else { return }
         rememberChange()
         annotations.removeAll { $0.id == id }
         reconcileSelectionAndSteps()
     }
     func undoLastAnnotation() {
+        endAnnotationStyleEdit()
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(annotations)
         annotations = previous
         reconcileSelectionAndSteps()
     }
     func redoLastAnnotation() {
+        endAnnotationStyleEdit()
         guard let next = redoStack.popLast() else { return }
         undoStack.append(annotations)
         annotations = next
         reconcileSelectionAndSteps()
     }
     func clearAnnotations() {
+        endAnnotationStyleEdit()
         guard !annotations.isEmpty else { return }
         rememberChange()
         annotations.removeAll()
