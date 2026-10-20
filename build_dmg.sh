@@ -1,59 +1,34 @@
 #!/bin/bash
-set -e
-
+set -euo pipefail
+cd "$(dirname "$0")"
 APP_NAME="Screenshoti"
-BUNDLE_ID="com.dmsznv.screenshoti"
-VERSION="1.0.0"
-BUILD_DIR=".build/release"
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Sources/Screenshoti/Resources/Info.plist)
 STAGING_DIR="build_dmg_staging"
 APP_BUNDLE="${STAGING_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}-${VERSION}-Installer.dmg"
-
-echo "🔨 1/5: Сборка релизной версии ${APP_NAME} (Universal / Native)..."
-swift build -c release
-
-echo "📦 2/5: Формирование структуры macOS приложения (${APP_NAME}.app)..."
-rm -rf "$STAGING_DIR" "$DMG_NAME"
-mkdir -p "${APP_BUNDLE}/Contents/MacOS"
-mkdir -p "${APP_BUNDLE}/Contents/Resources"
-
-# Копирование бинарного файла
+APP_ONLY=false
+if [[ "${1:-}" == "--app-only" ]]; then APP_ONLY=true; shift; fi
+swift build -c release "$@"
+BUILD_DIR=$(swift build -c release --show-bin-path "$@")
+mkdir -p "${APP_BUNDLE}/Contents/MacOS" "${APP_BUNDLE}/Contents/Resources"
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
-
-# Копирование Info.plist с подстановкой переменных
-sed "s/\$(EXECUTABLE_NAME)/${APP_NAME}/g" "Sources/Screenshoti/Resources/Info.plist" > "${APP_BUNDLE}/Contents/Info.plist"
-
-# Копирование ресурсов (если есть бандл SwiftPM)
-if [ -d "${BUILD_DIR}/${APP_NAME}_${APP_NAME}.bundle" ]; then
-    cp -R "${BUILD_DIR}/${APP_NAME}_${APP_NAME}.bundle" "${APP_BUNDLE}/Contents/Resources/"
-fi
-
-echo "🔏 3/5: Локальная подпись приложения (Ad-Hoc Code Signing) и применение Entitlements..."
-codesign --force --deep --sign - --entitlements "Sources/Screenshoti/Resources/Screenshoti.entitlements" "${APP_BUNDLE}"
-
-echo "🔗 4/5: Добавление ярлыка папки Applications для удобного перетаскивания (Drag & Drop)..."
-ln -s /Applications "${STAGING_DIR}/Applications"
-
-echo "💿 5/5: Упаковка в установочный образ ${DMG_NAME}..."
-if command -v create-dmg >/dev/null 2>&1; then
-    create-dmg \
-      --volname "${APP_NAME} Installer" \
-      --window-pos 200 120 \
-      --window-size 600 400 \
-      --icon-size 100 \
-      --icon "${APP_NAME}.app" 160 185 \
-      --hide-extension "${APP_NAME}.app" \
-      --app-drop-link 440 185 \
-      "${DMG_NAME}" \
-      "${STAGING_DIR}/"
-else
-    hdiutil create -volname "${APP_NAME} Installer" \
-      -srcfolder "${STAGING_DIR}" \
-      -ov -format UDZO \
-      "${DMG_NAME}"
-fi
-
-rm -rf "$STAGING_DIR"
-echo "✅ Готово! Установочный файл создан: $(pwd)/${DMG_NAME}"
-open -R "${DMG_NAME}" || true
+cp Sources/Screenshoti/Resources/Info.plist "${APP_BUNDLE}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set CFBundleExecutable ${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
+plutil -lint "${APP_BUNDLE}/Contents/Info.plist"
+ICONSET=$(mktemp -d)/AppIcon.iconset
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" Sources/Screenshoti/Resources/AppIcon.png --out "${ICONSET}/icon_${size}x${size}.png" >/dev/null
+    pixels=$((size * 2))
+    sips -z "$pixels" "$pixels" Sources/Screenshoti/Resources/AppIcon.png --out "${ICONSET}/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+test -s "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+codesign --force --sign - --entitlements Sources/Screenshoti/Resources/Screenshoti.entitlements "${APP_BUNDLE}"
+codesign --verify --strict "${APP_BUNDLE}"
+if [[ "$APP_ONLY" == true ]]; then echo "App ready: ${APP_BUNDLE}"; exit 0; fi
+if [[ ! -L "${STAGING_DIR}/Applications" ]]; then ln -s /Applications "${STAGING_DIR}/Applications"; fi
+hdiutil create -volname "${APP_NAME} Installer" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_NAME"
+echo "Installer ready: ${DMG_NAME}"

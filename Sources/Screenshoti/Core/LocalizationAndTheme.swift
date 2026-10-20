@@ -39,6 +39,12 @@ final class AppPreferences: ObservableObject {
     @AppStorage("auto_copy_clipboard") var autoCopyToClipboard: Bool = true
     @AppStorage("show_quick_overlay") var showQuickOverlay: Bool = true
     
+    @AppStorage("preview_corner") var previewCorner: PreviewCorner = .bottomLeft {
+        didSet { objectWillChange.send() }
+    }
+    @Published var captureHotkeys = CaptureHotkeyConfiguration.load(from: .standard) {
+        didSet { captureHotkeys.save(to: .standard) }
+    }
     static let shared = AppPreferences()
     
     func tr(_ key: LKey) -> String {
@@ -47,6 +53,30 @@ final class AppPreferences: ObservableObject {
 }
 
 enum LKey {
+    case newText
+    case noSensitiveData
+    case exportTooLarge
+    case exportFailed
+    case errorTitle
+    case undo
+    case redo
+    case selectedLayer
+    case textContent
+    case lineWidth
+    case colorLabel
+    case deleteLayer
+    case emptyHistory
+    case canvasHint
+    case localProcessing
+    case redactionNote
+    case capturePermission
+    case captureUnavailable
+    case noWindow
+    case appearance
+    case settings
+    case done
+    case captureBusy
+    case layersHint
     case appTitle
     case captureArea
     case captureFullscreen
@@ -92,93 +122,78 @@ enum LKey {
     case openStudio
     
     func localized(for lang: AppLanguage) -> String {
-        switch (self, lang) {
-        case (.appTitle, .ru): return "Screenshoti Студия"
-        case (.appTitle, .en): return "Screenshoti Studio"
-        case (.captureArea, .ru): return "Захват области"
-        case (.captureArea, .en): return "Capture Area"
-        case (.captureFullscreen, .ru): return "Весь экран"
-        case (.captureFullscreen, .en): return "Fullscreen"
-        case (.captureWindow, .ru): return "Захват окна"
-        case (.captureWindow, .en): return "Capture Window"
-        case (.sampleCanvas, .ru): return "Демо-скриншот"
-        case (.sampleCanvas, .en): return "Demo Screenshot"
-        case (.toolSelect, .ru): return "Курсор"
-        case (.toolSelect, .en): return "Select"
-        case (.toolArrow, .ru): return "Стрелка"
-        case (.toolArrow, .en): return "Arrow"
-        case (.toolRect, .ru): return "Рамка"
-        case (.toolRect, .en): return "Rectangle"
-        case (.toolText, .ru): return "Текст"
-        case (.toolText, .en): return "Text"
-        case (.toolStep, .ru): return "Шаги (1,2,3)"
-        case (.toolStep, .en): return "Steps (1,2,3)"
-        case (.toolBlur, .ru): return "Блюр"
-        case (.toolBlur, .en): return "Redact/Blur"
-        case (.smartRedact, .ru): return "Умное скрытие (AI)"
-        case (.smartRedact, .en): return "Smart Redact (AI)"
-        case (.extractOCR, .ru): return "Текст (OCR)"
-        case (.extractOCR, .en): return "Extract Text (OCR)"
-        case (.pinToScreen, .ru): return "Закрепить"
-        case (.pinToScreen, .en): return "Pin to Screen"
-        case (.copyImage, .ru): return "Копировать"
-        case (.copyImage, .en): return "Copy"
-        case (.saveImage, .ru): return "Сохранить"
-        case (.saveImage, .en): return "Save"
-        case (.copiedBadge, .ru): return "Скопировано в буфер!"
-        case (.copiedBadge, .en): return "Copied to Clipboard!"
-        case (.backgroundSection, .ru): return "Фон и Градиенты"
-        case (.backgroundSection, .en): return "Background & Gradients"
-        case (.autoBalanceColors, .ru): return "Автоподбор под скриншот"
-        case (.autoBalanceColors, .en): return "Smart Color Match"
-        case (.geometrySection, .ru): return "Отступы и Рамка"
-        case (.geometrySection, .en): return "Geometry & Frame"
-        case (.outerPadding, .ru): return "Внешний отступ"
-        case (.outerPadding, .en): return "Outer Padding"
-        case (.innerInset, .ru): return "Внутренняя рамка"
-        case (.innerInset, .en): return "Inner Inset"
-        case (.cornerRadius, .ru): return "Скругление углов"
-        case (.cornerRadius, .en): return "Corner Radius"
-        case (.shadowRadius, .ru): return "Мягкость тени"
-        case (.shadowRadius, .en): return "Drop Shadow"
-        case (.windowHeaderToggle, .ru): return "Шапка окна macOS"
-        case (.windowHeaderToggle, .en): return "macOS Window Header"
-        case (.aspectRatioSection, .ru): return "Соотношение сторон"
-        case (.aspectRatioSection, .en): return "Aspect Ratio"
-        case (.annotationsSection, .ru): return "Слои и Аннотации"
-        case (.annotationsSection, .en): return "Layers & Annotations"
-        case (.clearAnnotations, .ru): return "Очистить слои"
-        case (.clearAnnotations, .en): return "Clear Layers"
-        case (.historySection, .ru): return "Недавние снимки"
-        case (.historySection, .en): return "Recent Captures"
-        case (.settingsTitle, .ru): return "Настройки"
-        case (.settingsTitle, .en): return "Settings"
-        case (.themeLabel, .ru): return "Оформление"
-        case (.themeLabel, .en): return "Appearance"
-        case (.themeSystem, .ru): return "Системное"
-        case (.themeSystem, .en): return "System"
-        case (.themeLight, .ru): return "Светлое"
-        case (.themeLight, .en): return "Light"
-        case (.themeDark, .ru): return "Темное"
-        case (.themeDark, .en): return "Dark"
-        case (.languageLabel, .ru): return "Язык интерфейса"
-        case (.languageLabel, .en): return "Language"
-        case (.autoCopyLabel, .ru): return "Автокопирование в буфер"
-        case (.autoCopyLabel, .en): return "Auto-copy to Clipboard"
-        case (.quickOverlayLabel, .ru): return "Плавающее превью в углу"
-        case (.quickOverlayLabel, .en): return "Show Quick Overlay"
-        case (.ocrResultTitle, .ru): return "Распознанный текст (OCR)"
-        case (.ocrResultTitle, .en): return "Recognized Text (OCR)"
-        case (.noTextFound, .ru): return "Текст на изображении не обнаружен."
-        case (.noTextFound, .en): return "No text detected on the image."
-        case (.copyTextBtn, .ru): return "Скопировать текст"
-        case (.copyTextBtn, .en): return "Copy Text"
-        case (.closeBtn, .ru): return "Закрыть"
-        case (.closeBtn, .en): return "Close"
-        case (.quitApp, .ru): return "Выйти из Screenshoti"
-        case (.quitApp, .en): return "Quit Screenshoti"
-        case (.openStudio, .ru): return "Открыть студию..."
-        case (.openStudio, .en): return "Open Studio..."
+        switch self {
+        case .newText: return lang == .ru ? "Текст" : "Text"
+        case .noSensitiveData: return lang == .ru ? "Чувствительные данные не найдены. Проверьте снимок вручную." : "No sensitive data found. Check the image manually."
+        case .exportTooLarge: return lang == .ru ? "Изображение слишком большое. Уменьшите отступы или измените пропорции." : "Image is too large. Reduce padding or change the aspect ratio."
+        case .exportFailed: return lang == .ru ? "Не удалось экспортировать изображение." : "Could not export the image."
+        case .errorTitle: return lang == .ru ? "Не получилось" : "Something went wrong"
+        case .undo: return lang == .ru ? "Отменить" : "Undo"
+        case .redo: return lang == .ru ? "Повторить" : "Redo"
+        case .selectedLayer: return lang == .ru ? "Выбранный слой" : "Selected layer"
+        case .textContent: return lang == .ru ? "Текст аннотации" : "Annotation text"
+        case .lineWidth: return lang == .ru ? "Толщина" : "Thickness"
+        case .colorLabel: return lang == .ru ? "Цвет" : "Color"
+        case .deleteLayer: return lang == .ru ? "Удалить слой" : "Delete layer"
+        case .emptyHistory: return lang == .ru ? "Здесь появятся ваши снимки" : "Your captures appear here"
+        case .canvasHint: return lang == .ru ? "Выберите инструмент или перетащите аннотацию" : "Choose a tool or drag an annotation"
+        case .localProcessing: return lang == .ru ? "Обработка на вашем Mac" : "Processed on your Mac"
+        case .redactionNote: return lang == .ru ? "Автопоиск может пропустить данные — проверьте снимок перед отправкой." : "Automatic detection can miss data. Review before sharing."
+        case .capturePermission: return lang == .ru ? "Разрешите запись экрана для Screenshoti в Системных настройках → Конфиденциальность и безопасность." : "Allow screen recording for Screenshoti in System Settings → Privacy & Security."
+        case .captureUnavailable: return lang == .ru ? "Не удалось найти экран или окно для захвата." : "No screen or window is available to capture."
+        case .noWindow: return lang == .ru ? "Окно не найдено. Переключитесь на нужное приложение и повторите захват." : "No window found. Switch to the target application and try again."
+        case .appearance: return lang == .ru ? "Оформление" : "Appearance"
+        case .settings: return lang == .ru ? "Настройки" : "Settings"
+        case .done: return lang == .ru ? "Готово" : "Done"
+        case .captureBusy: return lang == .ru ? "Захват…" : "Capturing…"
+        case .layersHint: return lang == .ru ? "Кликните по аннотации, чтобы изменить её" : "Click an annotation to edit it"
+        case .appTitle: return lang == .ru ? "Screenshoti Студия" : "Screenshoti Studio"
+        case .captureArea: return lang == .ru ? "Захват области" : "Capture Area"
+        case .captureFullscreen: return lang == .ru ? "Весь экран" : "Fullscreen"
+        case .captureWindow: return lang == .ru ? "Захват окна" : "Capture Window"
+        case .sampleCanvas: return lang == .ru ? "Демо-скриншот" : "Demo Screenshot"
+        case .toolSelect: return lang == .ru ? "Курсор" : "Select"
+        case .toolArrow: return lang == .ru ? "Стрелка" : "Arrow"
+        case .toolRect: return lang == .ru ? "Рамка" : "Rectangle"
+        case .toolText: return lang == .ru ? "Текст" : "Text"
+        case .toolStep: return lang == .ru ? "Шаги (1,2,3)" : "Steps (1,2,3)"
+        case .toolBlur: return lang == .ru ? "Скрыть данные" : "Redact"
+        case .smartRedact: return lang == .ru ? "Автоскрытие" : "Auto Redact"
+        case .extractOCR: return lang == .ru ? "Текст (OCR)" : "Extract Text (OCR)"
+        case .pinToScreen: return lang == .ru ? "Закрепить" : "Pin to Screen"
+        case .copyImage: return lang == .ru ? "Копировать" : "Copy"
+        case .saveImage: return lang == .ru ? "Сохранить" : "Save"
+        case .copiedBadge: return lang == .ru ? "Скопировано в буфер!" : "Copied to Clipboard!"
+        case .backgroundSection: return lang == .ru ? "Фон и Градиенты" : "Background & Gradients"
+        case .autoBalanceColors: return lang == .ru ? "Автоподбор под скриншот" : "Smart Color Match"
+        case .geometrySection: return lang == .ru ? "Отступы и Рамка" : "Geometry & Frame"
+        case .outerPadding: return lang == .ru ? "Внешний отступ" : "Outer Padding"
+        case .innerInset: return lang == .ru ? "Внутренняя рамка" : "Inner Inset"
+        case .cornerRadius: return lang == .ru ? "Скругление углов" : "Corner Radius"
+        case .shadowRadius: return lang == .ru ? "Мягкость тени" : "Drop Shadow"
+        case .windowHeaderToggle: return lang == .ru ? "Шапка окна macOS" : "macOS Window Header"
+        case .aspectRatioSection: return lang == .ru ? "Соотношение сторон" : "Aspect Ratio"
+        case .annotationsSection: return lang == .ru ? "Слои и Аннотации" : "Layers & Annotations"
+        case .clearAnnotations: return lang == .ru ? "Очистить слои" : "Clear Layers"
+        case .historySection: return lang == .ru ? "Недавние снимки" : "Recent Captures"
+        case .settingsTitle: return lang == .ru ? "Настройки" : "Settings"
+        case .themeLabel: return lang == .ru ? "Оформление" : "Appearance"
+        case .themeSystem: return lang == .ru ? "Системное" : "System"
+        case .themeLight: return lang == .ru ? "Светлое" : "Light"
+        case .themeDark: return lang == .ru ? "Темное" : "Dark"
+        case .languageLabel: return lang == .ru ? "Язык интерфейса" : "Language"
+        case .autoCopyLabel: return lang == .ru ? "Автокопирование в буфер" : "Auto-copy to Clipboard"
+        case .quickOverlayLabel: return lang == .ru ? "Плавающее превью в углу" : "Show Quick Overlay"
+        case .ocrResultTitle: return lang == .ru ? "Распознанный текст (OCR)" : "Recognized Text (OCR)"
+        case .noTextFound: return lang == .ru ? "Текст на изображении не обнаружен." : "No text detected on the image."
+        case .copyTextBtn: return lang == .ru ? "Скопировать текст" : "Copy Text"
+        case .closeBtn: return lang == .ru ? "Закрыть" : "Close"
+        case .quitApp: return lang == .ru ? "Выйти из Screenshoti" : "Quit Screenshoti"
+        case .openStudio: return lang == .ru ? "Открыть студию..." : "Open Studio..."
         }
     }
+}
+
+enum StudioPalette {
+    static let accent = Color(red: 0.43, green: 0.37, blue: 0.86)
 }

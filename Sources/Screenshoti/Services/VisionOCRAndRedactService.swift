@@ -1,84 +1,41 @@
-import AppKit
+import Foundation
+import CoreGraphics
 import Vision
 
-struct DetectedTextRegion {
+struct DetectedTextRegion: Sendable {
     let text: String
-    /// Нормализованный прямоугольник в системе координат SwiftUI (сверху-слева 0,0)
     let normalizedTopLeftRect: CGRect
     let isSensitive: Bool
 }
-
-final class VisionOCRAndRedactService {
+struct OCRResult: Sendable {
+    let fullText: String
+    let regions: [DetectedTextRegion]
+}
+actor VisionOCRAndRedactService {
     static let shared = VisionOCRAndRedactService()
-    
-    /// Распознавание текста (RU + EN) и поиск конфиденциальных данных (Email, карты, телефоны, ключи)
-    func analyzeImage(_ image: NSImage) async -> (fullText: String, regions: [DetectedTextRegion]) {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return ("", [])
+    func analyzeImage(_ image: CGImage) throws -> OCRResult {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["ru-RU", "en-US"]
+        request.usesLanguageCorrection = true
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        let regions = (request.results ?? []).compactMap { observation -> DetectedTextRegion? in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            let box = observation.boundingBox
+            return DetectedTextRegion(text: candidate.string,
+                normalizedTopLeftRect: CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height),
+                isSensitive: Self.containsSensitiveInfo(candidate.string))
         }
-        
-        return await withCheckedContinuation { continuation in
-            let request = VNRecognizeTextRequest { req, _ in
-                guard let observations = req.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: ("", []))
-                    return
-                }
-                
-                var lines: [String] = []
-                var regions: [DetectedTextRegion] = []
-                
-                for obs in observations {
-                    guard let topCandidate = obs.topCandidates(1).first else { continue }
-                    let str = topCandidate.string
-                    lines.append(str)
-                    
-                    let box = obs.boundingBox
-                    // Перевод из координат Vision (снизу-слева) в координаты верхнего-левого угла
-                    let topLeftRect = CGRect(
-                        x: box.origin.x,
-                        y: 1.0 - box.origin.y - box.height,
-                        width: box.width,
-                        height: box.height
-                    )
-                    
-                    let sensitive = Self.containsSensitiveInfo(str)
-                    regions.append(DetectedTextRegion(
-                        text: str,
-                        normalizedTopLeftRect: topLeftRect,
-                        isSensitive: sensitive
-                    ))
-                }
-                
-                continuation.resume(returning: (lines.joined(separator: "\n"), regions))
-            }
-            
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["ru-RU", "en-US"]
-            request.usesLanguageCorrection = true
-            
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                continuation.resume(returning: ("", []))
-            }
-        }
+        return OCRResult(fullText: regions.map(\.text).joined(separator: "\n"), regions: regions)
     }
-    
-    /// Проверка строки на наличие чувствительных данных (Email, телефоны, банковские карты, токены)
-    private static func containsSensitiveInfo(_ text: String) -> Bool {
+    nonisolated static func containsSensitiveInfo(_ text: String) -> Bool {
         let patterns = [
-            "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}", // Email
-            "(?:\\d[ -]*?){13,16}",                               // Банковские карты
-            "\\+?\\d[\\d\\s\\-\\(\\)]{8,16}\\d",     // Телефоны
-            "(sk-[A-Za-z0-9]{12,}|ghp_[A-Za-z0-9]{12,}|Bearer\\s+[A-Za-z0-9._-]+)" // API ключи
+            #"[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,64}"#,
+            #"(?:\d[ -]*?){13,19}"#,
+            #"\+?\d[\d\s\-\(\)]{8,18}\d"#,
+            #"(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|Bearer\s+[A-Za-z0-9._-]+)"#,
+            #"\b(?:\d{1,3}\.){3}\d{1,3}\b"#
         ]
-        
-        for pattern in patterns {
-            if text.range(of: pattern, options: .regularExpression) != nil {
-                return true
-            }
-        }
-        return false
+        return patterns.contains { text.range(of: $0, options: [.regularExpression, .caseInsensitive]) != nil }
     }
 }
