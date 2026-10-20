@@ -217,6 +217,12 @@ final class EditorViewModel: ObservableObject {
                                          startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
+    func appendRedactions(_ items: [AnnotationItem]) {
+        guard !items.isEmpty else { return }
+        rememberChange()
+        annotations.append(contentsOf: items)
+    }
+
     func performSmartRedaction() { analyzeText(redact: true) }
     func extractTextOCR() { analyzeText(redact: false) }
     private func analyzeText(redact: Bool) {
@@ -242,8 +248,7 @@ final class EditorViewModel: ObservableObject {
                         !annotations.contains { $0.tool == .redactBlur && $0.boundingRect == candidate.boundingRect }
                     }
                     guard !newItems.isEmpty else { return }
-                    rememberChange()
-                    annotations.append(contentsOf: newItems)
+                    appendRedactions(newItems)
                 } else {
                     ocrModalText = result.fullText.isEmpty ? AppPreferences.shared.tr(.noTextFound) : result.fullText
                 }
